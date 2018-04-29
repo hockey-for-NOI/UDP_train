@@ -63,6 +63,7 @@ int	key_dispatch(std::shared_ptr<KeyManager> km,
 			int v0 = ntohl(*(int*)(buf + 12));
 			if (c0 ^ c1 ^ v0) continue;
 
+
 			int x = km->dispatch_readonly();
 			int t0 = d(e);
 			*(int*)buf = htonl(MAGIC1);
@@ -102,22 +103,24 @@ int	data_transform(std::shared_ptr<KeyManager> km,
 			int q = ntohl(*(int*)(buf + 8));
 			if (q <= 0 || q > MAX_QUERY) continue;
 			int st = ntohl(*(int*)(buf + 12));
-			if (st <= 0 || st >= q) continue;
+			if (st < 0 || st >= q) continue;
 			int ed = ntohl(*(int*)(buf + 16));
 			if (ed <= st || ed > q || ed - st != ret - 28) continue;
 			int powrk2 = ntohl(*(int*)(buf + 20));
 			if (powrk2 <= 0 || powrk2 >= P) continue;
 			int chksum = ntohl(*(int*)(buf + 24));
-			chksum ^= MAGIC2 ^ powrx ^ q ^ st ^ ed ^ powrk2;
+			chksum ^= powrx ^ q ^ st ^ ed ^ powrk2;
 			for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 28));
 			if (chksum) continue;
+
 
 			char k = x & 255;
 			int v1 = powr(x, powrk2);
 			*(int*)buf = htonl(MAGIC3);
 			*(int*)(buf + 4) = htonl(v1);
-			chksum = MAGIC3 ^ v1; 
+			chksum = v1; 
 			for (int i=st; i<ed; i++) buf[i - st + 12] = buf[i - st + 28] ^ k ^ dp->get(q, i);
+			memset(buf + ed - st + 12, 0, 4);
 			for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
 			*(int*)(buf + 8) = htonl(chksum);
 
