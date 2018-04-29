@@ -18,6 +18,26 @@ Server version 0.0.0.1
 |MAGIC2|4|0x9029XXXX, XXXX=client version|
 |MAGIC3|4|0x9209XXXX, XXXX=server version|
 
+## Usage
+
+Server:
+
+	mkdir build
+	cd build
+	cmake ..
+	make
+	./server
+
+Client
+
+	mkdir build
+	cd build
+	cmake ..
+	make
+	./client 127.0.0.1
+
+Or replace 127.0.0.1 with the server address.
+
 ## Safety
 
 P = 0x78000001, R = 31. a^b means exp(b\*ln(a)).
@@ -46,7 +66,7 @@ Server use lookup table to check if R^X exists in key pool. If so, get X using l
 
 Then, server get the required string, xor them with the keys to encrypt, and generate another checksum.
 
-Server send MAGIC3, R^K2^X(for identification), a checksum and the encrypted string to client.
+Server send MAGIC4, R^K2^X(for identification), a checksum and the encrypted string to client.
 
 After the above 4 steps, one package is transformed.
 
