@@ -8,8 +8,8 @@ Use UDP protocol to implement a key-value request server and client.
 
 ## Protocol
 
-Client version 0.0.0.1
-Server version 0.0.0.1
+Client version 0.0.0.2
+Server version 0.0.0.2
 
 |Name|Length(in bytes)|Description|
 |:-:|--:|:--|
@@ -82,7 +82,7 @@ After the above 4 steps, one package is transformed.
 
 # Key Value Storage
 
-Key expands to 16 byte.
+Key expands to 8 byte.
 
 Key will not represent length. The length is temporarily managed by client.
 
@@ -90,7 +90,7 @@ When length exceed occurs, the server will NOT CRASH, but may return UNDEFINED R
 
 Add write op. No sync at present.
 
-Request format: MAGIC(4B) token(4B) reply\_token(4B) key(16B) op(4B) st(4B) ed(4B) checksum(4B), total = 44B.
+Request format: MAGIC(4B) token(4B) reply\_token(4B) key(8B) op(4B) st(4B) ed(4B) checksum(4B), total = 36B.
 
 op=0 Read (Return arbitary on exceed)
 op=1 Write (Create on unexist, and resize on exceed)

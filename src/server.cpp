@@ -26,11 +26,10 @@
 
 const	int	MAX_EPOLL_SIZE = 8000;
 const	unsigned short port0 = 0xCAFE, port1 = 0xFACE;
-const	int	MAGIC0 = 0xCAFE0001;
-const	int	MAGIC1 = 0xFACE0001;
-const	int	MAGIC2 = 0x90290001;
-const	int	MAGIC3 = 0x92090001;
-const	int	MAX_QUERY = 1000000000;
+const	int	MAGIC0 = 0xCAFE0002;
+const	int	MAGIC1 = 0xFACE0002;
+const	int	MAGIC2 = 0x90290002;
+const	int	MAGIC3 = 0x92090002;
 
 using	namespace	oi;
 
@@ -84,7 +83,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
 	socklen_t target_addr_len = sizeof(target_addr);
 
 	epoll_event	events[MAX_EPOLL_SIZE];
-	char	buf[1032]; //Protocol 1000 + 4 * 7, padding + 4
+	char	buf[1040]; //Protocol 1000 + 36, padding + 4
 	while (1)
 	{
 		int num = epoll_wait(epollfd, events, MAX_EPOLL_SIZE, 0);
@@ -92,40 +91,70 @@ int	data_transform(std::shared_ptr<KeyManager> km,
 		for (int i=0; i<num; i++)
 		{
 			int fd = events[i].data.fd;
-			int ret = recvfrom(fd, buf, 1028, 0, (sockaddr*)&target_addr, &target_addr_len);
-			if (ret <= 28) continue;
+			int ret = recvfrom(fd, buf, 1036, 0, (sockaddr*)&target_addr, &target_addr_len);
+			if (ret < 36) continue;
 			memset(buf + ret, 0, 4); // Pad the buffer by 4 for checksum verifying.
 
 			if (ntohl(*(int*)buf) != MAGIC2) continue;
 			int powrx = ntohl(*(int*)(buf + 4)), x;
 			if (!(x = km->lookup_and_remove(powrx))) continue;
 
-			int q = ntohl(*(int*)(buf + 8));
-			if (q <= 0 || q > MAX_QUERY) continue;
-			int st = ntohl(*(int*)(buf + 12));
-			if (st < 0 || st >= q) continue;
-			int ed = ntohl(*(int*)(buf + 16));
-			if (ed <= st || ed > q || ed - st != ret - 28) continue;
-			int powrk2 = ntohl(*(int*)(buf + 20));
+			int powrk2 = ntohl(*(int*)(buf + 8));
 			if (powrk2 <= 0 || powrk2 >= P) continue;
-			int chksum = ntohl(*(int*)(buf + 24));
-			chksum ^= powrx ^ q ^ st ^ ed ^ powrk2;
-			for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 28));
+			int q0 = ntohl(*(int*)(buf + 12));
+			int q1 = ntohl(*(int*)(buf + 16));
+            int op = ntohl(*(int*)(buf + 20));
+
+			int arg1 = ntohl(*(int*)(buf + 24));
+			int arg2 = ntohl(*(int*)(buf + 28));
+			int chksum = ntohl(*(int*)(buf + 32));
+			chksum ^= powrx ^ powrk2 ^ q0 ^ q1 ^ op ^ arg1 ^ arg2;
+			for (int i=36; i<ret; i+=4) chksum ^= ntohl(*(int*)(buf + i));
 			if (chksum) continue;
 
+            if (op == 0) //Read
+            {
+                int st = arg1, ed = arg2;
+                if (st < 0) continue;
+                if (ed <= st || ed - st != ret - 36) continue;
 
-			char k = x & 255;
-			int v1 = powr(x, powrk2);
-			*(int*)buf = htonl(MAGIC3);
-			*(int*)(buf + 4) = htonl(v1);
-			chksum = v1; 
-			for (int i=st; i<ed; i++) buf[i - st + 12] = buf[i - st + 28] ^ k ^ dp->get(q, i);
-			memset(buf + ed - st + 12, 0, 4);
-			for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
-			*(int*)(buf + 8) = htonl(chksum);
+                char k = x & 255;
+                int v1 = powr(x, powrk2);
+                *(int*)buf = htonl(MAGIC3);
+                *(int*)(buf + 4) = htonl(v1);
+                chksum = v1; 
+                for (int i=st; i<ed; i++) buf[i - st + 12] = buf[i - st + 44] ^ k ^ dp->get(q0, q1, i);
+                memset(buf + ed - st + 12, 0, 4);
+                for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
+                *(int*)(buf + 8) = htonl(chksum);
 
-			ret = sendto(fd, buf, ed - st + 12, 0, (sockaddr*)&target_addr, target_addr_len);
-			if (ret != ed - st + 12) continue;
+                ret = sendto(fd, buf, ed - st + 12, 0, (sockaddr*)&target_addr, target_addr_len);
+                if (ret != ed - st + 12) continue;
+                
+                continue;
+            }
+
+            if (op == 1) //Write
+            {
+                int st = arg1, ed = arg2;
+                if (st < 0) continue;
+                if (ed <= st || ed - st != ret - 36) continue;
+
+                char k = x & 255;
+                int v1 = powr(x, powrk2);
+                *(int*)buf = htonl(MAGIC3);
+                *(int*)(buf + 4) = htonl(v1);
+                chksum = v1; 
+                for (int i=st; i<ed; i++) dp->set(q0, q1, i, buf[i - st + 12] = buf[i - st + 44] ^ k);
+                memset(buf + ed - st + 12, 0, 4);
+                for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
+                *(int*)(buf + 8) = htonl(chksum);
+
+                ret = sendto(fd, buf, 12, 0, (sockaddr*)&target_addr, target_addr_len);
+                if (ret != 12) continue;
+                
+                continue;
+            }
 		}
 	}
 }

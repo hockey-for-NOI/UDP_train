@@ -178,7 +178,7 @@ int	main(int argc, char **argv)
 	{
 		printf("Query = ");
 		scanf("%d", &q);
-		if (q <= 0)
+		if (q < 0)
 		{
 			printf("Error: negative query.");
 			continue;
