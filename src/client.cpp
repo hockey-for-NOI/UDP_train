@@ -16,10 +16,10 @@
 
 
 const	unsigned	short	port0 = 0XCAFE, port1 = 0xFACE;
-const	int	MAGIC0 = 0xCAFE0001;
-const	int	MAGIC1 = 0xFACE0001;
-const	int	MAGIC2 = 0x90290001;
-const	int	MAGIC3 = 0x92090001;
+const	int	MAGIC0 = 0xCAFE0002;
+const	int	MAGIC1 = 0xFACE0002;
+const	int	MAGIC2 = 0x90290002;
+const	int	MAGIC3 = 0x92090002;
 const	int	MAX_QUERY = 1000000000;
 const	int	TIMEOUT_SEC = 5;
 const	int	BASE_LENGTH = 4;
