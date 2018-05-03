@@ -220,7 +220,7 @@ int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 
     char    buf[1040];
 
-	int k2 = myrand() % P, px = powr(x), pk2 = powr(k2), op = 0;
+	int k2 = myrand() % P, px = powr(x), pk2 = powr(k2), op = 1;
     int chksum = op ^ px ^ q0 ^ q1 ^ st ^ ed ^ pk2;
 
 	*(int*)buf = htonl(MAGIC2);

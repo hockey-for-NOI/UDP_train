@@ -71,6 +71,7 @@ int	key_dispatch(std::shared_ptr<KeyManager> km,
 			*(int*)(buf + 12) = htonl(powr(t0, c1) ^ x);
 			ret = sendto(fd, buf, 16, 0, (sockaddr*)&target_addr, target_addr_len);
 			if (ret != 16) continue;
+            printf("Dispatch.");
 		}
 	}
 }
@@ -114,6 +115,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
 
             if (op == 0) //Read
             {
+                printf("Read OP.");
                 int st = arg1, ed = arg2;
                 if (st < 0) continue;
                 if (ed <= st || ed - st != ret - 36) continue;
@@ -136,6 +138,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
 
             if (op == 1) //Write
             {
+                printf("Write OP.");
                 int st = arg1, ed = arg2;
                 if (st < 0) continue;
                 if (ed <= st || ed - st != ret - 36) continue;
