@@ -104,7 +104,7 @@ int	request_token()
 	socklen_t scapelen;
 	while (1)
 	{
-        int k0 = myrand() % P, k1 = myrand() % P;
+        int k0 = myrand() % (P - 1) + 1, k1 = myrand() % (P - 1) + 1;
 		int c0 = powr(k0), c1 = powr(k1);
 		
 		*(int*)buf = htonl(MAGIC0);
@@ -151,7 +151,7 @@ int	query_with_token(int x, int q0, int q1, int st, int ed, char *res)
 	char	keys[CAP_LENGTH];
     char    buf[1040];
 
-	int k2 = myrand() % P, px = powr(x), pk2 = powr(k2), op = 0;
+	int k2 = myrand() % (P - 1) + 1, px = powr(x), pk2 = powr(k2), op = 0;
     int chksum = op ^ px ^ q0 ^ q1 ^ st ^ ed ^ pk2;
 
 	*(int*)buf = htonl(MAGIC2);
@@ -220,7 +220,7 @@ int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 
     char    buf[1040];
 
-	int k2 = myrand() % P, px = powr(x), pk2 = powr(k2), op = 1;
+	int k2 = myrand() % (P - 1) + 1, px = powr(x), pk2 = powr(k2), op = 1;
     int chksum = op ^ px ^ q0 ^ q1 ^ st ^ ed ^ pk2;
 
 	*(int*)buf = htonl(MAGIC2);
@@ -249,7 +249,7 @@ int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 
 	for (int def_t=0; def_t < DEF_TIMES; def_t++)
 	{
-		ret = recvfrom(connfd, buf, ed - st + 12, 0, (struct sockaddr*)&scapegoat, &scapelen);
+		ret = recvfrom(connfd, buf, 12, 0, (struct sockaddr*)&scapegoat, &scapelen);
 		if (ret < 0) break;
 		if (ret != 12) continue;
 
