@@ -129,7 +129,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
                 *(int*)buf = htonl(MAGIC3);
                 *(int*)(buf + 4) = htonl(v1);
                 chksum = v1; 
-                for (int i=st; i<ed; i++) buf[i - st + 12] = buf[i - st + 44] ^ k ^ dp->get(q0, q1, i);
+                for (int i=st; i<ed; i++) buf[i - st + 12] = buf[i - st + 36] ^ k ^ dp->get(q0, q1, i);
                 memset(buf + ed - st + 12, 0, 4);
                 for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
                 *(int*)(buf + 8) = htonl(chksum);
@@ -137,6 +137,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
                 ret = sendto(fd, buf, ed - st + 12, 0, (sockaddr*)&target_addr, target_addr_len);
                 if (ret != ed - st + 12) continue;
                 
+		printf("Success: %d %d\n", st, ed);
                 continue;
             }
 
@@ -152,7 +153,7 @@ int	data_transform(std::shared_ptr<KeyManager> km,
                 *(int*)buf = htonl(MAGIC3);
                 *(int*)(buf + 4) = htonl(v1);
                 chksum = v1; 
-                for (int i=st; i<ed; i++) dp->set(q0, q1, i, buf[i - st + 12] = buf[i - st + 44] ^ k);
+                for (int i=st; i<ed; i++) dp->set(q0, q1, i, buf[i - st + 12] = (buf[i - st + 36] ^ k));
                 memset(buf + ed - st + 12, 0, 4);
                 for (int i=st; i<ed; i+=4) chksum ^= ntohl(*(int*)(buf + i - st + 12));
                 *(int*)(buf + 8) = htonl(chksum);
@@ -160,6 +161,8 @@ int	data_transform(std::shared_ptr<KeyManager> km,
                 ret = sendto(fd, buf, 12, 0, (sockaddr*)&target_addr, target_addr_len);
                 if (ret != 12) continue;
                 
+		printf("Success: %d %d\n", st, ed);
+
                 continue;
             }
 		}

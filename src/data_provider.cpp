@@ -1,5 +1,7 @@
 #include "data_provider.h"
 
+//#include <cstdio>
+
 namespace	oi
 {
 
@@ -17,6 +19,7 @@ void	NaiveDataProvider::set(int q0, int q1, int pos, char value)
     auto &entry = m_data[q];
     if (pos >= entry.size()) entry.resize(pos + 1);
     entry[pos] = value;
+//    printf("%d %d %d %d\n", q0, q1, pos, (int)value);
 }
 
 }	// end namespace oi
