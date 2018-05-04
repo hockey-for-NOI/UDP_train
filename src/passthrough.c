@@ -75,6 +75,7 @@ inline	int	powr2(int x, int base)
 inline  int powr(int x) {return powr2(x, R);}
 
 const   char    server_addr_str[] = "120.25.160.91";
+const   char    my_fuse_path[] = "/.myfuse/";
 const	unsigned	short	port0 = 0XCAFE, port1 = 0xFACE;
 const	int	MAGIC0 = 0xCAFE0002;
 const	int	MAGIC1 = 0xFACE0002;
@@ -85,8 +86,8 @@ const	int	BASE_LENGTH = 4;
 const	int	CAP_LENGTH = 1000;
 const	int	DEF_TIMES = 10;
 
-inline  void myseed() {srand48(time(0));}
-inline  int myrand() {return lrand48();}
+inline  void myseed(void) {srand48(time(0));}
+inline  int myrand(void) {return lrand48();}
 
 struct MyGlobalConnStorage
 {
@@ -94,7 +95,7 @@ struct MyGlobalConnStorage
     int connfd0, connfd1;
 }   global_conn_storage;
 
-int	request_token()
+static int	request_token(void)
 {
     int connfd = global_conn_storage.connfd0;
     struct sockaddr_in serv_addr = global_conn_storage.serv_addr0;
@@ -140,7 +141,7 @@ int	request_token()
 	}
 }
 
-int	query_with_token(int x, int q0, int q1, int st, int ed, char *res)
+static int	query_with_token(int x, int q0, int q1, int st, int ed, char *res)
 {
     int connfd = global_conn_storage.connfd1;
     struct sockaddr_in serv_addr = global_conn_storage.serv_addr1;
@@ -182,7 +183,7 @@ int	query_with_token(int x, int q0, int q1, int st, int ed, char *res)
 	for (int def_t=0; def_t < DEF_TIMES; def_t++)
 	{
 		ret = recvfrom(connfd, buf, ed - st + 12, 0, (struct sockaddr*)&scapegoat, &scapelen);
-		if (ret < 0) break;
+		if (ret == -EAGAIN) break;
 		if (ret != ed - st + 12) continue;
 
 		/*
@@ -210,7 +211,7 @@ int	query_with_token(int x, int q0, int q1, int st, int ed, char *res)
 	return 0;
 }
 
-int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
+static int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 {
     int connfd = global_conn_storage.connfd1;
     struct sockaddr_in serv_addr = global_conn_storage.serv_addr1;
@@ -250,7 +251,7 @@ int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 	for (int def_t=0; def_t < DEF_TIMES; def_t++)
 	{
 		ret = recvfrom(connfd, buf, 12, 0, (struct sockaddr*)&scapegoat, &scapelen);
-		if (ret < 0) break;
+		if (ret == -EAGAIN) break;
 		if (ret != 12) continue;
 
 		/*
@@ -271,7 +272,7 @@ int	write_with_token(int x, int q0, int q1, int st, int ed, char const*data)
 	return 0;
 }
 
-int myread(int q0, int q1, char* buf, int size, int offset)
+static int myread(int q0, int q1, char* buf, int size, int offset)
 {
     int length = BASE_LENGTH;
     int now = 0;
@@ -291,7 +292,7 @@ int myread(int q0, int q1, char* buf, int size, int offset)
     return now;
 }
 
-int mywrite(int q0, int q1, char const* buf, int size, int offset)
+static int mywrite(int q0, int q1, char const* buf, int size, int offset)
 {
     int length = BASE_LENGTH;
     int now = 0;
@@ -311,6 +312,18 @@ int mywrite(int q0, int q1, char const* buf, int size, int offset)
     return now;
 }
 
+static char* packpath(const char* path)
+{
+    int l1 = strlen(getenv("HOME")), l2 = strlen(my_fuse_path), l3 = strlen(path);
+    char *buf = malloc(l1 + l2 + l3 + 1);
+    memcpy(buf, getenv("HOME"), l1);
+    memcpy(buf + l1, my_fuse_path, l2);
+    memcpy(buf + l1 + l2, path, l3);
+    buf[l1 + l2 + l3] = 0;
+    return buf;
+}
+
+
 static void *xmp_init(struct fuse_conn_info *conn,
 		      struct fuse_config *cfg)
 {
@@ -327,6 +340,14 @@ static void *xmp_init(struct fuse_conn_info *conn,
 	cfg->entry_timeout = 0;
 	cfg->attr_timeout = 0;
 	cfg->negative_timeout = 0;
+
+	return NULL;
+}
+
+static void *pack_init(struct fuse_conn_info *conn,
+		      struct fuse_config *cfg)
+{
+	mkdir(packpath(""), 0755);
 
     myseed();
 
@@ -357,10 +378,10 @@ static void *xmp_init(struct fuse_conn_info *conn,
     global_conn_storage.connfd0 = connfd0;
     global_conn_storage.connfd1 = connfd1;
 
-	return NULL;
+    return xmp_init(conn, cfg);
 }
 
-static int xmp_getattr(const char *path, struct stat *stbuf,
+static int modified_getattr(const char *path, struct stat *stbuf,
 		       struct fuse_file_info *fi)
 {
 	(void) fi;
@@ -370,32 +391,30 @@ static int xmp_getattr(const char *path, struct stat *stbuf,
 	if (res == -1)
 		return -errno;
 
+    if (S_ISREG(stbuf->st_mode))
+    {
+        res = open(path, O_RDWR | O_CREAT, 0755);
+        if (res == -1)
+            return -errno;
+
+        int data[3];
+        if (pread(res, (void*)data, 12, 0) != 12)
+            return -errno;
+
+        stbuf->st_size = data[2];
+    }
+
 	return 0;
 }
 
-static int xmp_access(const char *path, int mask)
+static int pack_getattr(const char *path, struct stat *stbuf,
+		       struct fuse_file_info *fi)
 {
-	int res;
-
-	res = access(path, mask);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+    char* ppath = packpath(path);
+    int ret = modified_getattr(ppath, stbuf, fi);
+    free(ppath);
+    return ret;
 }
-
-static int xmp_readlink(const char *path, char *buf, size_t size)
-{
-	int res;
-
-	res = readlink(path, buf, size - 1);
-	if (res == -1)
-		return -errno;
-
-	buf[res] = '\0';
-	return 0;
-}
-
 
 static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi,
@@ -425,24 +444,14 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int xmp_mknod(const char *path, mode_t mode, dev_t rdev)
+static int pack_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+		       off_t offset, struct fuse_file_info *fi,
+		       enum fuse_readdir_flags flags)
 {
-	int res;
-
-	/* On Linux this could just be 'mknod(path, mode, rdev)' but this
-	   is more portable */
-	if (S_ISREG(mode)) {
-		res = open(path, O_CREAT | O_EXCL | O_WRONLY, mode);
-		if (res >= 0)
-			res = close(res);
-	} else if (S_ISFIFO(mode))
-		res = mkfifo(path, mode);
-	else
-		res = mknod(path, mode, rdev);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+    char* ppath = packpath(path);
+    int ret = xmp_readdir(ppath, buf, filler, offset, fi, flags);
+    free(ppath);
+    return ret;
 }
 
 static int xmp_mkdir(const char *path, mode_t mode)
@@ -456,15 +465,12 @@ static int xmp_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-static int xmp_unlink(const char *path)
+static int pack_mkdir(const char *path, mode_t mode)
 {
-	int res;
-
-	res = unlink(path);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+    char* ppath = packpath(path);
+    int ret = xmp_mkdir(ppath, mode);
+    free(ppath);
+    return ret;
 }
 
 static int xmp_rmdir(const char *path)
@@ -478,15 +484,12 @@ static int xmp_rmdir(const char *path)
 	return 0;
 }
 
-static int xmp_symlink(const char *from, const char *to)
+static int pack_rmdir(const char *path)
 {
-	int res;
-
-	res = symlink(from, to);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+    char* ppath = packpath(path);
+    int ret = xmp_rmdir(ppath);
+    free(ppath);
+    return ret;
 }
 
 static int xmp_rename(const char *from, const char *to, unsigned int flags)
@@ -503,80 +506,39 @@ static int xmp_rename(const char *from, const char *to, unsigned int flags)
 	return 0;
 }
 
-static int xmp_link(const char *from, const char *to)
+static int pack_rename(const char *from, const char *to, unsigned int flags)
+{
+    char *pfrom = packpath(from), *pto = packpath(to);
+    int ret = xmp_rename(pfrom, pto, flags);
+    free(pfrom); free(pto);
+    return ret;
+}
+
+static int xmp_unlink(const char *path)
 {
 	int res;
 
-	res = link(from, to);
+	res = unlink(path);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
 
-static int xmp_chmod(const char *path, mode_t mode,
-		     struct fuse_file_info *fi)
+static int pack_unlink(const char *path)
 {
-	(void) fi;
-	int res;
-
-	res = chmod(path, mode);
-	if (res == -1)
-		return -errno;
-
-	return 0;
+    char* ppath = packpath(path);
+    int ret = xmp_unlink(ppath);
+    free(ppath);
+    return ret;
 }
 
-static int xmp_chown(const char *path, uid_t uid, gid_t gid,
-		     struct fuse_file_info *fi)
-{
-	(void) fi;
-	int res;
-
-	res = lchown(path, uid, gid);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-static int xmp_truncate(const char *path, off_t size,
-			struct fuse_file_info *fi)
-{
-	int res;
-
-	if (fi != NULL)
-		res = ftruncate(fi->fh, size);
-	else
-		res = truncate(path, size);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-
-#ifdef HAVE_UTIMENSAT
-static int xmp_utimens(const char *path, const struct timespec ts[2],
-		       struct fuse_file_info *fi)
-{
-	(void) fi;
-	int res;
-
-	/* don't use utime/utimes since they follow symlinks */
-	res = utimensat(0, path, ts, AT_SYMLINK_NOFOLLOW);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-#endif
-
-static int xmp_create(const char *path, mode_t mode,
+static int modified_create(const char *path, mode_t mode,
 		      struct fuse_file_info *fi)
 {
 	int res;
 
-	res = open(path, O_RDWR, mode);
+	res = open(path, O_RDWR | O_CREAT | O_TRUNC, mode);
 	if (res == -1)
 		return -errno;
 
@@ -584,36 +546,80 @@ static int xmp_create(const char *path, mode_t mode,
     if (pwrite(res, (void*)data, 12, 0) == -1)
         return -errno;
 
-	fi->fh = res;
+    if (!fi)
+	    close(res);
+    else
+        fi->fh = res;
 	return 0;
 }
 
-static int xmp_open(const char *path, struct fuse_file_info *fi)
+static int pack_create(const char *path, mode_t mode,
+		      struct fuse_file_info *fi)
+{
+    char * ppath = packpath(path);
+    int ret = modified_create(ppath, mode, fi);
+    free(ppath);
+    return ret;
+}
+
+static int modified_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
 
-	res = open(path, O_RDWR);
+	res = open(path, O_RDWR | O_CREAT, 0755);
 	if (res == -1)
 		return -errno;
 
     int data[3];
-    if (pread(res, (void*)data, 12, 0) == -1)
-        return -errno;
+    if (pread(res, (void*)data, 12, 0) != 12)
+    {
+        close(res);
+        res = open(path, O_RDWR | O_TRUNC, 0755);
+	    if (res == -1)
+		    return -errno;
 
-	fi->fh = res;
+        data[0] = myrand(); data[1] = myrand(); data[2] = 0;
+        if (pwrite(res, (void*)data, 12, 0) != 12)
+        {
+            return -errno;
+        }
+    }
+
+    if (fi->flags & O_TRUNC)
+    {
+        data[2] = 0;
+        if (pwrite(res, (void*)data, 12, 0) != 12)
+        {
+            return -errno;
+        }
+    }
+
+    if (fi)
+        fi->fh = res;
+    else
+        close(res);
+
 	return 0;
 }
 
-static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
+static int pack_open(const char *path, struct fuse_file_info *fi)
+{
+    char * ppath = packpath(path);
+    int ret = modified_open(ppath, fi);
+    free(ppath);
+    return ret;
+}
+
+static int modified_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
 
-	if(fi == NULL)
-		fd = open(path, O_RDONLY);
-	else
-		fd = fi->fh;
+    if (!fi)
+	    fd = open(path, O_RDWR);
+    else
+        fd = fi->fh;
 	
 	if (fd == -1)
 		return -errno;
@@ -622,27 +628,43 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
     if (pread(fd, (void*)data, 12, 0) == -1)
         return -errno;
 
-    if (size + offset > data[2])
+    if (offset > data[2])
         return 0;
+
+    if (offset + size > data[2])
+        size = data[2] - offset;
 
 	res = myread(data[0], data[1], buf, size, offset);
 
-	if(fi == NULL)
-		close(fd);
+    if (!fi)
+    	close(fd);
+
+    if (size + offset > data[2])
+        return data[2] - size;
+
 	return res;
 }
 
-static int xmp_write(const char *path, const char *buf, size_t size,
+static int pack_read(const char *path, char *buf, size_t size, off_t offset,
+		    struct fuse_file_info *fi)
+{
+    char * ppath = packpath(path);
+    int ret = modified_read(ppath, buf, size, offset, fi);
+    free(ppath);
+    return ret;
+}
+
+static int modified_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
 
 	(void) fi;
-	if(fi == NULL)
-		fd = open(path, O_RDWR);
-	else
-		fd = fi->fh;
+    if (!fi)
+	    fd = open(path, O_RDWR);
+    else
+        fd = fi->fh;
 	
 	if (fd == -1)
 		return -errno;
@@ -660,20 +682,59 @@ static int xmp_write(const char *path, const char *buf, size_t size,
 
 	res = mywrite(data[0], data[1], buf, size, offset);
 
-	if(fi == NULL)
-		close(fd);
+    if (!fi)
+	    close(fd);
+
 	return res;
 }
 
-static int xmp_statfs(const char *path, struct statvfs *stbuf)
+static int pack_write(const char *path, const char *buf, size_t size,
+		     off_t offset, struct fuse_file_info *fi)
 {
-	int res;
+    char * ppath = packpath(path);
+    int ret = modified_write(ppath, buf, size, offset, fi);
+    free(ppath);
+    return ret;
+}
 
-	res = statvfs(path, stbuf);
-	if (res == -1)
+static int modified_truncate(const char *path, off_t offset,
+             struct fuse_file_info *fi)
+{
+	int fd;
+
+	(void) fi;
+    if (!fi)
+	    fd = open(path, O_RDWR);
+    else
+        fd = fi->fh;
+	
+	if (fd == -1)
 		return -errno;
 
+    int data[3];
+    if (pread(fd, (void*)data, 12, 0) == -1)
+        return -errno;
+
+    if (offset != data[2])
+    {
+        data[2] = offset;
+        if (pwrite(fd, (void*)data, 12, 0) == -1)
+            return -errno;
+    }
+
+    if (!fi)
+	    close(fd);
+
 	return 0;
+}
+
+static int pack_truncate(const char *path, off_t offset,
+             struct fuse_file_info *fi)
+{
+    char * ppath = packpath(path);
+    int ret = modified_truncate(ppath, offset, fi);
+    free(ppath);
+    return ret;
 }
 
 static int xmp_release(const char *path, struct fuse_file_info *fi)
@@ -683,129 +744,28 @@ static int xmp_release(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int xmp_fsync(const char *path, int isdatasync,
-		     struct fuse_file_info *fi)
+static int pack_release(const char *path, struct fuse_file_info *fi)
 {
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
-
-	(void) path;
-	(void) isdatasync;
-	(void) fi;
-	return 0;
+    char * ppath = packpath(path);
+    int ret = xmp_release(ppath, fi);
+    free(ppath);
+    return ret;
 }
-
-#ifdef HAVE_POSIX_FALLOCATE
-static int xmp_fallocate(const char *path, int mode,
-			off_t offset, off_t length, struct fuse_file_info *fi)
-{
-	int fd;
-	int res;
-
-	(void) fi;
-
-	if (mode)
-		return -EOPNOTSUPP;
-
-	if(fi == NULL)
-		fd = open(path, O_WRONLY);
-	else
-		fd = fi->fh;
-	
-	if (fd == -1)
-		return -errno;
-
-    int data[3];
-    if (pread(fd, (void*)data, 12, 0) == -1)
-        return -errno;
-
-    if (length + offset > data[2])
-    {
-        data[2] = length + offset;
-        if (pwrite(fd, (void*)data, 12, 0) == -1)
-            return -errno;
-    }
-
-    res = 0;
-
-	if(fi == NULL)
-		close(fd);
-	return res;
-}
-#endif
-
-#ifdef HAVE_SETXATTR
-/* xattr operations are optional and can safely be left unimplemented */
-static int xmp_setxattr(const char *path, const char *name, const char *value,
-			size_t size, int flags)
-{
-	int res = lsetxattr(path, name, value, size, flags);
-	if (res == -1)
-		return -errno;
-	return 0;
-}
-
-static int xmp_getxattr(const char *path, const char *name, char *value,
-			size_t size)
-{
-	int res = lgetxattr(path, name, value, size);
-	if (res == -1)
-		return -errno;
-	return res;
-}
-
-static int xmp_listxattr(const char *path, char *list, size_t size)
-{
-	int res = llistxattr(path, list, size);
-	if (res == -1)
-		return -errno;
-	return res;
-}
-
-static int xmp_removexattr(const char *path, const char *name)
-{
-	int res = lremovexattr(path, name);
-	if (res == -1)
-		return -errno;
-	return 0;
-}
-#endif /* HAVE_SETXATTR */
 
 static struct fuse_operations xmp_oper = {
-	.init           = xmp_init,
-	.getattr	= xmp_getattr,
-	.access		= xmp_access,
-	.readlink	= xmp_readlink,
-	.readdir	= xmp_readdir,
-	.mknod		= xmp_mknod,
-	.mkdir		= xmp_mkdir,
-	.symlink	= xmp_symlink,
-	.unlink		= xmp_unlink,
-	.rmdir		= xmp_rmdir,
-	.rename		= xmp_rename,
-	.link		= xmp_link,
-	.chmod		= xmp_chmod,
-	.chown		= xmp_chown,
-	.truncate	= xmp_truncate,
-#ifdef HAVE_UTIMENSAT
-	.utimens	= xmp_utimens,
-#endif
-	.open		= xmp_open,
-	.create 	= xmp_create,
-	.read		= xmp_read,
-	.write		= xmp_write,
-	.statfs		= xmp_statfs,
-	.release	= xmp_release,
-	.fsync		= xmp_fsync,
-#ifdef HAVE_POSIX_FALLOCATE
-	.fallocate	= xmp_fallocate,
-#endif
-#ifdef HAVE_SETXATTR
-	.setxattr	= xmp_setxattr,
-	.getxattr	= xmp_getxattr,
-	.listxattr	= xmp_listxattr,
-	.removexattr	= xmp_removexattr,
-#endif
+	.init       = pack_init,
+	.getattr	= pack_getattr,
+	.readdir	= pack_readdir,
+	.mkdir		= pack_mkdir,
+	.rmdir		= pack_rmdir,
+	.rename		= pack_rename,
+    .unlink     = pack_unlink,
+	.open		= pack_open,
+	.create 	= pack_create,
+	.read		= pack_read,
+	.write		= pack_write,
+    .truncate   = pack_truncate,
+    .release    = pack_release
 };
 
 int main(int argc, char *argv[])
