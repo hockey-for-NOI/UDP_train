@@ -279,6 +279,7 @@ static int myread(int q0, int q1, char* buf, int size, int offset)
 
     while (now < size)
     {
+	    printf("R: %d %d %d\n", now, size, offset);
         if (length > size - now) length = size - now;
         int x = request_token();
         if (query_with_token(x, q0, q1, offset + now, offset + now + length, buf + now) == length)
@@ -299,6 +300,7 @@ static int mywrite(int q0, int q1, char const* buf, int size, int offset)
 
     while (now < size)
     {
+	    printf("W: %d %d %d\n", now, size, offset);
         if (length > size - now) length = size - now;
         int x = request_token();
         if (write_with_token(x, q0, q1, offset + now, offset + now + length, buf + now) == length)
