@@ -62,7 +62,7 @@ typedef	long long	ll;
 const	int	P = 0x78000001;
 const	int	R = 31;
 
-inline	int	powr2(int x, int base)
+static  inline	int	powr2(int x, int base)
 {
 	ll s = (x & 1 ? base : 1), t = base;
 	while (x >>= 1)
@@ -72,7 +72,7 @@ inline	int	powr2(int x, int base)
 	}
 	return s;
 }
-inline  int powr(int x) {return powr2(x, R);}
+static  inline  int powr(int x) {return powr2(x, R);}
 
 const   char    server_addr_str[] = "120.25.160.91";
 const   char    my_fuse_path[] = "/.myfuse/";
@@ -86,8 +86,8 @@ const	int	BASE_LENGTH = 4;
 const	int	CAP_LENGTH = 1000;
 const	int	DEF_TIMES = 10;
 
-inline  void myseed(void) {srand48(time(0));}
-inline  int myrand(void) {return lrand48();}
+static  inline  void myseed(void) {srand48(time(0));}
+static  inline  int myrand(void) {return lrand48();}
 
 struct MyGlobalConnStorage
 {
